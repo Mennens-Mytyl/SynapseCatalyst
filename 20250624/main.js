@@ -620,7 +620,6 @@ exportBtn.addEventListener('click', async () => {
     const meta = getMeasurementMeta();
     let y = 54;
     const left = 40;
-    const colW = 160;
     const kleur = '#062d36';
     // Titel
     doc.setFontSize(28);
@@ -641,9 +640,9 @@ exportBtn.addEventListener('click', async () => {
     doc.setTextColor(kleur);
     doc.setFont(undefined, 'normal');
     doc.text(`Naam: ${meta.name || '-'}`, left, y);
-    doc.text(`Datum: ${meta.date || '-'}`, left+colW, y);
-    doc.text(`Diameter PEP-dopje: ${meta.diameter || '-'}`, left+colW*2, y);
-    doc.text(`Testtype: ${meta.type.charAt(0).toUpperCase()+meta.type.slice(1)}`, left+colW*3, y);
+    doc.text(`Datum: ${meta.date || '-'}`, left+160, y);
+    doc.text(`Diameter PEP-dopje: ${meta.diameter || '-'}`, left+320, y);
+    doc.text(`Testtype: ${meta.type.charAt(0).toUpperCase()+meta.type.slice(1)}`, left+480, y);
     y += 16;
     // Lijn
     doc.setDrawColor(220,220,220);
@@ -656,16 +655,16 @@ exportBtn.addEventListener('click', async () => {
     doc.setFont(undefined, 'bold');
     doc.text('Aantal expiraties:', left, y); doc.setFont(undefined, 'normal'); doc.text(`${measurementActions.filter(a=>a.type==='expiratie').length}`, left+110, y);
     doc.setFont(undefined, 'bold');
-    doc.text('Gem. duur expiratie:', left+colW, y); doc.setFont(undefined, 'normal'); doc.text(`${(measurementActions.filter(a=>a.type==='expiratie').reduce((s,a)=>s+a.duration,0)/(measurementActions.filter(a=>a.type==='expiratie').length||1)).toFixed(2)} s`, left+colW+120, y);
+    doc.text('Gem. duur expiratie:', left+160, y); doc.setFont(undefined, 'normal'); doc.text(`${(measurementActions.filter(a=>a.type==='expiratie').reduce((s,a)=>s+a.duration,0)/(measurementActions.filter(a=>a.type==='expiratie').length||1)).toFixed(2)} s`, left+170, y);
     doc.setFont(undefined, 'bold');
-    doc.text('Gem. max expiratie:', left+colW*2, y); doc.setFont(undefined, 'normal'); doc.text(`${(measurementActions.filter(a=>a.type==='expiratie').reduce((s,a)=>s+a.max,0)/(measurementActions.filter(a=>a.type==='expiratie').length||1)).toFixed(3)}`, left+colW*2+120, y);
+    doc.text('Gem. max expiratie:', left+320, y); doc.setFont(undefined, 'normal'); doc.text(`${(measurementActions.filter(a=>a.type==='expiratie').reduce((s,a)=>s+a.max,0)/(measurementActions.filter(a=>a.type==='expiratie').length||1)).toFixed(3)}`, left+330, y);
     y += 16;
     doc.setFont(undefined, 'bold');
-    doc.text('Aantal inspiraties:', left, y); doc.setFont(undefined, 'normal'); doc.text(`${measurementActions.filter(a=>a.type==='inspiratie').length}`, left+110, y);
+    doc.text('Aantal inspiraties:', left, y); doc.setFont(undefined, 'normal'); doc.text(`${measurementActions.filter(a=>a.type==='inspirie').length}`, left+110, y);
     doc.setFont(undefined, 'bold');
-    doc.text('Gem. duur inspiratie:', left+colW, y); doc.setFont(undefined, 'normal'); doc.text(`${(measurementActions.filter(a=>a.type==='inspiratie').reduce((s,a)=>s+a.duration,0)/(measurementActions.filter(a=>a.type==='inspirie').length||1)).toFixed(2)} s`, left+colW+120, y);
+    doc.text('Gem. duur inspiratie:', left+160, y); doc.setFont(undefined, 'normal'); doc.text(`${(measurementActions.filter(a=>a.type==='inspirie').reduce((s,a)=>s+a.duration,0)/(measurementActions.filter(a=>a.type==='inspirie').length||1)).toFixed(2)} s`, left+170, y);
     doc.setFont(undefined, 'bold');
-    doc.text('Gem. max inspiratie:', left+colW*2, y); doc.setFont(undefined, 'normal'); doc.text(`${(measurementActions.filter(a=>a.type==='inspiratie').reduce((s,a)=>s+a.max,0)/(measurementActions.filter(a=>a.type==='inspiratie').length||1)).toFixed(3)}`, left+colW*2+120, y);
+    doc.text('Gem. max inspiratie:', left+320, y); doc.setFont(undefined, 'normal'); doc.text(`${(measurementActions.filter(a=>a.type==='inspirie').reduce((s,a)=>s+a.max,0)/(measurementActions.filter(a=>a.type==='inspirie').length||1)).toFixed(3)}`, left+330, y);
     y += 18;
     // Lijn
     doc.setDrawColor(220,220,220);
@@ -683,52 +682,58 @@ exportBtn.addEventListener('click', async () => {
     doc.setLineWidth(1);
     doc.line(left, y, 780, y);
     y += 10;
-    // Tabelkop
-    doc.setFontSize(12);
-    doc.setTextColor(kleur);
-    doc.setFont(undefined, 'bold');
-    doc.setFillColor(245,245,245);
-    doc.rect(left, y-10, 700, 18, 'F');
-    doc.text('#', left+10, y);
-    doc.text('Type', left+50, y);
-    doc.text('Maximale waarde', left+160, y);
-    doc.text('Duur (s)', left+320, y);
-    y += 10;
-    // Tabelrijen, met paginawissel na 15 regels
-    doc.setFont(undefined, 'normal');
+    // Tabel in 2 kolommen van elk maximaal 10 regels per pagina
+    const maxRowsPerCol = 10;
+    const maxRowsPerPage = 20;
+    let pageRowIdx = 0;
+    let colX = [left, left+370];
+    let rowHeight = 18;
+    let tableStartY = y;
+    let tableY = [y, y];
+    let col = 0;
+    let pageIdx = 0;
+    const colW = 340;
+    function drawTableHeader(colIdx, yPos) {
+        doc.setFont(undefined, 'bold');
+        doc.setFillColor(245,245,245);
+        doc.rect(colX[colIdx], yPos-10, colW, 18, 'F');
+        doc.setTextColor(kleur);
+        doc.text('#', colX[colIdx]+10, yPos);
+        doc.text('Type', colX[colIdx]+40, yPos);
+        doc.text('Max waarde', colX[colIdx]+120, yPos);
+        doc.text('Duur (s)', colX[colIdx]+220, yPos);
+    }
+    drawTableHeader(0, tableY[0]);
+    drawTableHeader(1, tableY[1]);
+    tableY[0] += 10;
+    tableY[1] += 10;
     measurementActions.forEach((a,i) => {
-        if (i>0 && i%15===0) {
-            doc.addPage();
-            y = 54;
-            doc.setFontSize(12);
-            doc.setTextColor(kleur);
-            doc.setFont(undefined, 'bold');
-            doc.text('Resultaten (vervolg):', left, y);
-            y += 14;
-            doc.setFillColor(245,245,245);
-            doc.rect(left, y-10, 700, 18, 'F');
-            doc.setTextColor(kleur);
-            doc.text('#', left+10, y);
-            doc.text('Type', left+50, y);
-            doc.text('Maximale waarde', left+160, y);
-            doc.text('Duur (s)', left+320, y);
-            y += 10;
+        col = Math.floor((pageRowIdx % maxRowsPerPage) / maxRowsPerCol);
+        let rowIdx = (pageRowIdx % maxRowsPerCol);
+        let yPos = tableY[col] + rowIdx*rowHeight;
+        if (rowIdx === 0 && pageRowIdx > 0) {
+            // Nieuwe kolom of nieuwe pagina
+            if (col === 0) {
+                doc.addPage();
+                tableY = [54, 54];
+                drawTableHeader(0, tableY[0]);
+                drawTableHeader(1, tableY[1]);
+                tableY[0] += 10;
+                tableY[1] += 10;
+            }
         }
-        if (i%2===1) { doc.setFillColor(250,250,250); doc.rect(left, y, 700, 18, 'F'); }
+        if (i%2===1) { doc.setFillColor(250,250,250); doc.rect(colX[col], yPos, colW, rowHeight, 'F'); }
         let kleurType = a.type === 'inspiratie' ? '#1976d2' : '#f57c00';
         doc.setTextColor(kleurType);
-        doc.text(`${i+1}`, left+10, y+12);
-        doc.text(a.type.charAt(0).toUpperCase()+a.type.slice(1), left+50, y+12);
+        doc.text(`${i+1}`, colX[col]+10, yPos+12);
+        doc.text(a.type.charAt(0).toUpperCase()+a.type.slice(1), colX[col]+40, yPos+12);
         doc.setTextColor(kleur);
-        doc.text(a.max.toFixed(3), left+160, y+12);
-        doc.text(a.duration.toFixed(2), left+320, y+12);
-        y += 18;
+        doc.text(a.max.toFixed(3), colX[col]+120, yPos+12);
+        doc.text(a.duration.toFixed(2), colX[col]+220, yPos+12);
+        if (rowIdx === maxRowsPerCol-1) tableY[col] += maxRowsPerCol*rowHeight+10;
+        pageRowIdx++;
     });
-    // Lijn
-    y += 2;
-    doc.setDrawColor(220,220,220);
-    doc.setLineWidth(1);
-    doc.line(left, y, 780, y);
+    y = Math.max(tableY[0], tableY[1]) + 2;
     // Test/spelmodus blok
     y += 12;
     doc.setFontSize(13);
