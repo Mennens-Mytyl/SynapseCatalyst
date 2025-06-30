@@ -322,6 +322,44 @@ function joystickBreathListener(val) {
     });
 });
 
+// --- PEP modus sliders functioneel maken ---
+['pepTarget','pepSuccessTime','pepStartBrightness','pepMaxBrightness','pepBlinkCount','pepBlinkSpeed'].forEach(id => {
+    const el = document.getElementById(id);
+    const valEl = document.getElementById(id+'Value');
+    if (el && valEl) {
+        el.addEventListener('input',()=>{
+            valEl.textContent = el.value;
+            // Direct naar device sturen (key = id in snake_case)
+            let key = id.replace(/[A-Z]/g, m => '_' + m.toLowerCase());
+            let val = el.type === 'range' || el.type === 'number' ? parseFloat(el.value) : el.value;
+            settingsCache[key] = val;
+            sendCommand('SET:settings::' + JSON.stringify({ [key]: val }));
+        });
+    }
+});
+
+// Value-displays voor PEP beloning sliders
+['pepRewardMp3Volume','pepRewardLedBrightness','pepRewardGpioDuration'].forEach(id => {
+    const el = document.getElementById(id);
+    const valEl = document.getElementById(id+'Value');
+    if (el && valEl) {
+        el.addEventListener('input',()=>{ valEl.textContent = el.value; });
+    }
+});
+
+// Beloningstype logica
+const pepRewardType = document.getElementById('pepRewardType');
+const pepRewardMp3Settings = document.getElementById('pepRewardMp3Settings');
+const pepRewardLedSettings = document.getElementById('pepRewardLedSettings');
+const pepRewardGpioSettings = document.getElementById('pepRewardGpioSettings');
+function updatePepRewardSettingsVisibility() {
+    pepRewardMp3Settings.style.display = pepRewardType.value === 'mp3' ? '' : 'none';
+    pepRewardLedSettings.style.display = pepRewardType.value === 'led' ? '' : 'none';
+    pepRewardGpioSettings.style.display = pepRewardType.value === 'gpio' ? '' : 'none';
+}
+pepRewardType.addEventListener('change', updatePepRewardSettingsVisibility);
+updatePepRewardSettingsVisibility();
+
 // --- Init ---
 setStatus('Niet verbonden met apparaat', false);
 
@@ -361,6 +399,13 @@ const tableDiv = document.getElementById('measurementTable');
 const chartCanvas = document.getElementById('measurementChart');
 const summaryDiv = document.getElementById('measurementSummary');
 
+function updateMeasurementCounters() {
+    const nExp = measurementActions.filter(a=>a.type==='expiratie').length;
+    const nIns = measurementActions.filter(a=>a.type==='inspiratie').length;
+    document.getElementById('expCounter').textContent = nExp;
+    document.getElementById('insCounter').textContent = nIns;
+}
+
 function resetMeasurement() {
     measurementData = [];
     measurementActions = [];
@@ -369,6 +414,7 @@ function resetMeasurement() {
     summaryDiv.innerHTML = '';
     if (measurementChart) measurementChart.destroy();
     measurementChart = null;
+    updateMeasurementCounters();
 }
 
 function getMeasurementMeta() {
@@ -436,6 +482,7 @@ function addMeasurementAction(type, max, duration) {
     measurementActions.push({type, max, duration});
     renderMeasurementTable();
     renderMeasurementChart();
+    updateMeasurementCounters();
 }
 
 let currentAction = null;
@@ -492,6 +539,8 @@ startBtn.addEventListener('click', () => {
     startBtn.disabled = true;
     stopBtn.disabled = false;
     exportBtn.disabled = true;
+    // Toon direct een lege grafiek
+    renderMeasurementChart();
 });
 
 stopBtn.addEventListener('click', () => {
@@ -518,12 +567,46 @@ stopBtn.addEventListener('click', () => {
         Aantal inspiraties: ${nIns}<br>
         Gem. duur inspiratie: ${avgDurIns} s<br>
         Gem. max inspiratie: ${avgMaxIns}`;
+    updateMeasurementCounters();
 });
 
 exportBtn.disabled = true;
 stopBtn.disabled = true;
 
-// PDF-export functie
+// --- Testmodus dropdown en instellingen tonen ---
+const testModeSelect = document.getElementById('testModeSelect');
+const testModeSettings = document.getElementById('testModeSettings');
+const testRemarks = document.getElementById('testRemarks');
+let selectedTestMode = 'free';
+
+testModeSelect.addEventListener('change', () => {
+    selectedTestMode = testModeSelect.value;
+    renderTestModeSettings();
+    // Toon kleurkiezer alleen bij LED Spel
+    document.getElementById('ledStartColorWrap').style.display = (selectedTestMode === 'led') ? '' : 'none';
+});
+
+function renderTestModeSettings() {
+    let html = '';
+    const s = collectSettingsFromUI();
+    if (selectedTestMode === 'gpio') {
+        html = `<b>3,5mm Output instellingen:</b><br>Drempel inspiratie: <b>${s.inhale_gpio_threshold}</b><br>Drempel expiratie: <b>${s.blow_gpio_threshold}</b>`;
+    } else if (selectedTestMode === 'joystick') {
+        html = `<b>Joystick/Gamepad instellingen:</b><br>Max inademen: <b>${s.joystick_inhale_max}</b><br>Max uitademen: <b>${s.joystick_exhale_max}</b><br>Deadzone: <b>${s.deadzone}</b>`;
+    } else if (selectedTestMode === 'pep') {
+        html = `<b>PEP Modus instellingen:</b><br>Doelwaarde: <b>${s.pep_target_value}</b><br>Succes tijd: <b>${s.pep_hold_time}</b> sec<br>Herhalingen: <b>${s.pep_repeat_count}</b>`;
+    } else if (selectedTestMode === 'mp3') {
+        html = `<b>MP3 Speler instellingen:</b><br>Min. volume: <b>${s.min_volume}</b><br>Max. volume: <b>${s.max_volume}</b><br>Gevoeligheid: <b>${s.mp3_sensitivity}</b>`;
+    } else if (selectedTestMode === 'led') {
+        html = `<b>Interactief LED Spel instellingen:</b><br>Start helderheid: <b>${s.led_start_brightness*100}%</b><br>Max helderheid: <b>${s.led_max_brightness*100}%</b>`;
+    } else {
+        html = `<i>Vrije meting: alleen registratie van ademwaarden.</i>`;
+    }
+    testModeSettings.innerHTML = html;
+}
+renderTestModeSettings();
+
+// --- PDF-export aanpassen ---
 exportBtn.addEventListener('click', async () => {
     // jsPDF laden indien nodig
     if (typeof window.jspdf === 'undefined' && typeof window.jsPDF === 'undefined') {
@@ -537,7 +620,7 @@ exportBtn.addEventListener('click', async () => {
     const meta = getMeasurementMeta();
     let y = 54;
     const left = 40;
-    const colW = 180;
+    const colW = 160;
     const kleur = '#062d36';
     // Titel
     doc.setFontSize(28);
@@ -551,50 +634,44 @@ exportBtn.addEventListener('click', async () => {
     const exportTime = now.toTimeString().slice(0,5);
     doc.setFontSize(10);
     doc.setTextColor(80,80,80);
-    doc.text(`Export: ${exportDate} ${exportTime}`, 700, 40, {align:'right'});
+    doc.text(`Export: ${exportDate} ${exportTime}`, 780, 40, {align:'right'});
     y += 18;
-    // Metadata in 1 rij
-    doc.setFontSize(12);
+    // Metadata in 1 nette rij
+    doc.setFontSize(13);
     doc.setTextColor(kleur);
     doc.setFont(undefined, 'normal');
     doc.text(`Naam: ${meta.name || '-'}`, left, y);
     doc.text(`Datum: ${meta.date || '-'}`, left+colW, y);
     doc.text(`Diameter PEP-dopje: ${meta.diameter || '-'}`, left+colW*2, y);
     doc.text(`Testtype: ${meta.type.charAt(0).toUpperCase()+meta.type.slice(1)}`, left+colW*3, y);
-    y += 18;
+    y += 16;
     // Lijn
     doc.setDrawColor(220,220,220);
     doc.setLineWidth(1);
     doc.line(left, y, 780, y);
-    y += 16;
-    // Samenvatting in 2 kolommen
-    let nExp = measurementActions.filter(a=>a.type==='expiratie').length;
-    let nIns = measurementActions.filter(a=>a.type==='inspirie').length;
-    let avgDurExp = nExp ? (measurementActions.filter(a=>a.type==='expiratie').reduce((s,a)=>s+a.duration,0)/nExp).toFixed(2) : '-';
-    let avgDurIns = nIns ? (measurementActions.filter(a=>a.type==='inspirie').reduce((s,a)=>s+a.duration,0)/nIns).toFixed(2) : '-';
-    let avgMaxExp = nExp ? (measurementActions.filter(a=>a.type==='expiratie').reduce((s,a)=>s+a.max,0)/nExp).toFixed(3) : '-';
-    let avgMaxIns = nIns ? (measurementActions.filter(a=>a.type==='inspirie').reduce((s,a)=>s+a.max,0)/nIns).toFixed(3) : '-';
+    y += 10;
+    // Samenvatting blok
     doc.setFontSize(12);
     doc.setTextColor(kleur);
     doc.setFont(undefined, 'bold');
-    doc.text('Aantal expiraties:', left, y); doc.setFont(undefined, 'normal'); doc.text(`${nExp}`, left+110, y);
+    doc.text('Aantal expiraties:', left, y); doc.setFont(undefined, 'normal'); doc.text(`${measurementActions.filter(a=>a.type==='expiratie').length}`, left+110, y);
     doc.setFont(undefined, 'bold');
-    doc.text('Gem. duur expiratie:', left+colW, y); doc.setFont(undefined, 'normal'); doc.text(`${avgDurExp} s`, left+colW+120, y);
+    doc.text('Gem. duur expiratie:', left+colW, y); doc.setFont(undefined, 'normal'); doc.text(`${(measurementActions.filter(a=>a.type==='expiratie').reduce((s,a)=>s+a.duration,0)/(measurementActions.filter(a=>a.type==='expiratie').length||1)).toFixed(2)} s`, left+colW+120, y);
     doc.setFont(undefined, 'bold');
-    doc.text('Gem. max expiratie:', left+colW*2, y); doc.setFont(undefined, 'normal'); doc.text(`${avgMaxExp}`, left+colW*2+120, y);
+    doc.text('Gem. max expiratie:', left+colW*2, y); doc.setFont(undefined, 'normal'); doc.text(`${(measurementActions.filter(a=>a.type==='expiratie').reduce((s,a)=>s+a.max,0)/(measurementActions.filter(a=>a.type==='expiratie').length||1)).toFixed(3)}`, left+colW*2+120, y);
     y += 16;
     doc.setFont(undefined, 'bold');
-    doc.text('Aantal inspiraties:', left, y); doc.setFont(undefined, 'normal'); doc.text(`${nIns}`, left+110, y);
+    doc.text('Aantal inspiraties:', left, y); doc.setFont(undefined, 'normal'); doc.text(`${measurementActions.filter(a=>a.type==='inspiratie').length}`, left+110, y);
     doc.setFont(undefined, 'bold');
-    doc.text('Gem. duur inspiratie:', left+colW, y); doc.setFont(undefined, 'normal'); doc.text(`${avgDurIns} s`, left+colW+120, y);
+    doc.text('Gem. duur inspiratie:', left+colW, y); doc.setFont(undefined, 'normal'); doc.text(`${(measurementActions.filter(a=>a.type==='inspiratie').reduce((s,a)=>s+a.duration,0)/(measurementActions.filter(a=>a.type==='inspirie').length||1)).toFixed(2)} s`, left+colW+120, y);
     doc.setFont(undefined, 'bold');
-    doc.text('Gem. max inspiratie:', left+colW*2, y); doc.setFont(undefined, 'normal'); doc.text(`${avgMaxIns}`, left+colW*2+120, y);
+    doc.text('Gem. max inspiratie:', left+colW*2, y); doc.setFont(undefined, 'normal'); doc.text(`${(measurementActions.filter(a=>a.type==='inspiratie').reduce((s,a)=>s+a.max,0)/(measurementActions.filter(a=>a.type==='inspiratie').length||1)).toFixed(3)}`, left+colW*2+120, y);
     y += 18;
     // Lijn
     doc.setDrawColor(220,220,220);
     doc.setLineWidth(1);
     doc.line(left, y, 780, y);
-    y += 16;
+    y += 10;
     // Chart.js grafiek als afbeelding
     if (measurementChart) {
         const chartImg = measurementChart.toBase64Image();
@@ -605,28 +682,39 @@ exportBtn.addEventListener('click', async () => {
     doc.setDrawColor(220,220,220);
     doc.setLineWidth(1);
     doc.line(left, y, 780, y);
-    y += 16;
-    // Tabel
+    y += 10;
+    // Tabelkop
     doc.setFontSize(12);
     doc.setTextColor(kleur);
     doc.setFont(undefined, 'bold');
-    doc.text('Resultaten:', left, y);
-    y += 14;
-    // Tabelkop
     doc.setFillColor(245,245,245);
     doc.rect(left, y-10, 700, 18, 'F');
-    doc.setTextColor(kleur);
     doc.text('#', left+10, y);
     doc.text('Type', left+50, y);
     doc.text('Maximale waarde', left+160, y);
     doc.text('Duur (s)', left+320, y);
     y += 10;
-    // Tabelrijen
+    // Tabelrijen, met paginawissel na 15 regels
     doc.setFont(undefined, 'normal');
     measurementActions.forEach((a,i) => {
-        // Afwisselend lichte rijen
+        if (i>0 && i%15===0) {
+            doc.addPage();
+            y = 54;
+            doc.setFontSize(12);
+            doc.setTextColor(kleur);
+            doc.setFont(undefined, 'bold');
+            doc.text('Resultaten (vervolg):', left, y);
+            y += 14;
+            doc.setFillColor(245,245,245);
+            doc.rect(left, y-10, 700, 18, 'F');
+            doc.setTextColor(kleur);
+            doc.text('#', left+10, y);
+            doc.text('Type', left+50, y);
+            doc.text('Maximale waarde', left+160, y);
+            doc.text('Duur (s)', left+320, y);
+            y += 10;
+        }
         if (i%2===1) { doc.setFillColor(250,250,250); doc.rect(left, y, 700, 18, 'F'); }
-        // Typekleur
         let kleurType = a.type === 'inspiratie' ? '#1976d2' : '#f57c00';
         doc.setTextColor(kleurType);
         doc.text(`${i+1}`, left+10, y+12);
@@ -641,6 +729,34 @@ exportBtn.addEventListener('click', async () => {
     doc.setDrawColor(220,220,220);
     doc.setLineWidth(1);
     doc.line(left, y, 780, y);
+    // Test/spelmodus blok
+    y += 12;
+    doc.setFontSize(13);
+    doc.setTextColor(kleur);
+    doc.setFont(undefined, 'bold');
+    doc.text(`Test/spelmodus: ${testModeSelect.options[testModeSelect.selectedIndex].text}`, left, y);
+    y += 16;
+    doc.setFont(undefined, 'normal');
+    doc.setFontSize(11);
+    doc.setTextColor(80,80,80);
+    doc.setFillColor(245,245,245);
+    doc.rect(left, y-12, 700, 24, 'F');
+    doc.text(testModeSettings.innerText, left+8, y+4);
+    y += 24;
+    // Opmerkingen
+    if (testRemarks.value && testRemarks.value.trim().length > 0) {
+        doc.setFont(undefined, 'bold');
+        doc.setFontSize(12);
+        doc.setTextColor(kleur);
+        doc.text('Opmerkingen:', left, y);
+        y += 14;
+        doc.setFont(undefined, 'normal');
+        doc.setFontSize(11);
+        doc.setTextColor(80,80,80);
+        let remarksLines = doc.splitTextToSize(testRemarks.value, 700);
+        doc.text(remarksLines, left, y);
+        y += remarksLines.length * 14;
+    }
     // Voettekst
     doc.setFontSize(9);
     doc.setTextColor(120,120,120);
@@ -649,6 +765,77 @@ exportBtn.addEventListener('click', async () => {
     const safeName = (meta.name||'onbekend').replace(/[^a-zA-Z0-9_\-]/g,'_');
     const safeType = (meta.type||'').replace(/[^a-zA-Z0-9_\-]/g,'_');
     doc.save(`${safeName}_${meta.date||exportDate}_${exportTime.replace(':','')}_${safeType}.pdf`);
+});
+
+// === Instellingen exporteren/importeren ===
+const exportSettingsBtn = document.getElementById('exportSettings');
+const importSettingsBtn = document.getElementById('importSettings');
+const settingsExportTextarea = document.getElementById('settingsExport');
+
+function collectSettingsFromUI() {
+    // Verzamel alle relevante instellingen uit de UI met de juiste keys voor het device
+    const settings = {
+        // Joystick/Gamepad
+        joystick_inhale_max: parseFloat(document.getElementById('joystickInhaleMax').value),
+        joystick_exhale_max: parseFloat(document.getElementById('joystickExhaleMax').value),
+        control_mode: document.getElementById('controlMode').value,
+        deadzone: parseFloat(document.getElementById('deadzone').value),
+        blow_direction: document.getElementById('blowDirection').value,
+        inhale_direction: document.getElementById('inhaleDirection').value,
+        blow_button: document.getElementById('expiratieButton').value,
+        inhale_button: document.getElementById('inspiratieButton').value,
+        blow_threshold: parseFloat(document.getElementById('expiratieThreshold').value),
+        inhale_threshold: parseFloat(document.getElementById('inspiratieThreshold').value),
+        // GPIO
+        blow_gpio_threshold: parseFloat(document.getElementById('gpioExhaleThreshold').value),
+        inhale_gpio_threshold: parseFloat(document.getElementById('gpioInhaleThreshold').value),
+        gpio_duration: parseInt(document.getElementById('gpioDuration').value),
+        // LED Ring
+        led_start_brightness: parseInt(document.getElementById('ledStartBrightness').value) / 100,
+        led_max_brightness: parseInt(document.getElementById('ledMaxBrightness').value) / 100,
+        led_color_mode: document.getElementById('ledColorMode').value,
+        led_single_color: document.getElementById('ledSingleColor') ? hexToRgb(document.getElementById('ledSingleColor').value) : [255,0,0],
+        // PEP Modus
+        pep_mode_enabled: document.getElementById('enablePEP').checked,
+        pep_target_value: parseFloat(document.getElementById('pepTarget').value),
+        pep_hold_time: parseInt(document.getElementById('pepSuccessTime').value),
+        pep_start_brightness: parseInt(document.getElementById('pepStartBrightness').value) / 100,
+        pep_max_brightness: parseInt(document.getElementById('pepMaxBrightness').value) / 100,
+        pep_blink_times: parseInt(document.getElementById('pepBlinkCount').value),
+        pep_blink_speed: parseFloat(document.getElementById('pepBlinkSpeed').value),
+        pep_repeat_count: parseInt(document.getElementById('pepRepeatCount').value),
+        // MP3 Speler
+        dfplayer_enabled: document.getElementById('enableMP3').checked,
+        min_volume: parseInt(document.getElementById('mp3MinVolume').value),
+        max_volume: parseInt(document.getElementById('mp3MaxVolume').value),
+        mp3_sensitivity: parseFloat(document.getElementById('mp3Sensitivity').value),
+        track_change_threshold: parseFloat(document.getElementById('mp3InhaleNextThreshold').value),
+        // PEP Beloning
+        pep_reward_type: document.getElementById('pepRewardType').value,
+        pep_reward_mp3_track: pepRewardType.value === 'mp3' ? parseInt(document.getElementById('pepRewardMp3Track').value) : 0,
+        pep_reward_mp3_volume: pepRewardType.value === 'mp3' ? parseInt(document.getElementById('pepRewardMp3Volume').value) : 0,
+        pep_reward_led_effect: pepRewardType.value === 'led' ? document.getElementById('pepRewardLedEffect').value : '',
+        pep_reward_led_brightness: pepRewardType.value === 'led' ? parseInt(document.getElementById('pepRewardLedBrightness').value) / 100 : 0,
+        pep_reward_gpio_duration: pepRewardType.value === 'gpio' ? parseInt(document.getElementById('pepRewardGpioDuration').value) : 0,
+    };
+    return settings;
+}
+
+function hexToRgb(hex) {
+    // Converteer #rrggbb naar [r,g,b]
+    hex = hex.replace('#','');
+    return [parseInt(hex.substring(0,2),16),parseInt(hex.substring(2,4),16),parseInt(hex.substring(4,6),16)];
+}
+
+exportSettingsBtn.addEventListener('click', () => {
+    const settings = collectSettingsFromUI();
+    const json = JSON.stringify(settings, null, 2);
+    settingsExportTextarea.value = json;
+    // Automatisch kopiëren naar klembord
+    settingsExportTextarea.select();
+    document.execCommand('copy');
+    exportSettingsBtn.textContent = 'Gekopieerd!';
+    setTimeout(()=>{ exportSettingsBtn.textContent = 'Exporteer'; }, 1200);
 });
 
 });
